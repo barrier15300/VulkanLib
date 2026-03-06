@@ -7,7 +7,7 @@
 チュートリアル中
 
 今はここ (
- https://vulkan-tutorial.com/en/Depth_buffering
+ https://vulkan-tutorial.com/Loading_models
 )
 
 ---
