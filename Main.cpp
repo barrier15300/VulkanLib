@@ -1,4 +1,13 @@
-﻿#include "pch.h"
+﻿#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <tiny_gltf.h>
+
+#include "pch.h"
+
+#define __UNUSEDPROC_AUX2(line) __unused_proc##line
+#define __UNUSEDPROC_AUX(line) __UNUSEDPROC_AUX2(line)
+#define __UNUSEDPROC __UNUSEDPROC_AUX(__LINE__)
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -63,7 +72,8 @@ private:
 	uint32_t currentFrame = 0;
 
 	Timer timer;
-	glm::vec3 pos;
+	tinygltf::Model model;
+	tinygltf::TinyGLTF loader;
 
 	bool framebufferResized = false;
 	static void frameBufferResizeCallBack(GLFWwindow* window, int width, int height) {
@@ -114,21 +124,8 @@ private:
 		glm::mat4 view;
 		glm::mat4 proj;
 	};
-	const std::vector<Vertex> vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-	};
-	const std::vector<uint32_t> indices = {
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4
-	};
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
 	vk::Buffer vertexBuffer;
 	vk::DeviceMemory vertexBufferMemory;
 	vk::Buffer indexBuffer;
@@ -171,6 +168,7 @@ private:
 		createCommandPool();
 		createDepthResources();
 		createFramebuffers();
+		loadModel();
 		createTextureImage();
 		createTextureImageView();
 		createTextureSampler();
@@ -661,14 +659,80 @@ private:
 			++i;
 		}
 	}
-	void createTextureImage() {
-		int texWidth, texHeight, texChannels;
-		stbi_uc* pixels = stbi_load("textures/texture.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		vk::DeviceSize imageSize = texWidth * texHeight * 4;
+	void loadModel() {
+		std::string err;
+		std::string warn;
+		bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, "models/model.vrm");
 
-		if (!pixels) {
-			throw std::runtime_error("failed to load texture image!");
+		if (!ret) {
+			throw std::runtime_error("failed model load.");
 		}
+
+		if (!err.empty()) {
+			throw std::runtime_error(err.c_str());
+		}
+
+		if (!warn.empty()) {
+			std::cerr << warn << "\n";
+		}
+
+		for (const auto& mesh : model.meshes) {
+			for (const auto& primitive : mesh.primitives) {
+				const auto& vertAccessor = model.accessors[primitive.attributes.at("POSITION")];
+				const auto& vertBufferView = model.bufferViews[vertAccessor.bufferView];
+				const auto& vertBuffer = model.buffers[vertBufferView.buffer];
+				auto vertices = reinterpret_cast<const float*>(std::addressof(vertBuffer.data[vertBufferView.byteOffset + vertAccessor.byteOffset]));
+				auto vertCount = vertAccessor.count;
+
+				const auto& crdAccessor = model.accessors[primitive.attributes.at("TEXCOORD_0")];
+				const auto& crdBufferView = model.bufferViews[crdAccessor.bufferView];
+				const auto& crdBuffer = model.buffers[crdBufferView.buffer];
+				auto texCoords = reinterpret_cast<const float*>(std::addressof(crdBuffer.data[crdBufferView.byteOffset + crdAccessor.byteOffset]));
+				auto crdCount = crdAccessor.count;
+
+				const auto& idxAccessor = model.accessors[primitive.indices];
+				const auto& idxBufferView = model.bufferViews[idxAccessor.bufferView];
+				const auto& idxBuffer = model.buffers[idxBufferView.buffer];
+				auto indices = reinterpret_cast<const int*>(std::addressof(idxBuffer.data[idxBufferView.byteOffset + idxAccessor.byteOffset]));
+				auto idxCount = idxAccessor.count;
+
+				for (size_t i = 0; i < vertCount; ++i) {
+					Vertex vertex{};
+
+					vertex.pos = {
+						vertices[i * 3 + 0],
+						vertices[i * 3 + 1],
+						vertices[i * 3 + 2]
+					};
+
+					vertex.color = {1.0f, 1.0f, 1.0f};
+
+					this->vertices.push_back(std::move(vertex));
+				}
+
+				for (size_t i = 0; auto& vertex : this->vertices) {
+					vertex.texCoord = {
+						texCoords[i * 2 + 0],
+						texCoords[i * 2 + 1]
+					};
+
+					++i;
+				}
+
+				for (size_t i = 0; i < idxCount; ++i) {
+					this->indices.push_back(indices[i]);
+				}
+			}
+		}
+	}
+	void createTextureImage() {
+
+		auto& image = model.images.front();
+
+		int texWidth{}, texHeight{}, texChannels;
+		texWidth = image.width;
+		texHeight = image.height;
+		vk::DeviceSize imageSize = texWidth * texHeight * 4;
 
 		vk::Buffer stagingBuffer;
 		vk::DeviceMemory stagingBufferMemory;
@@ -683,10 +747,8 @@ private:
 		);
 
 		void* data = device.mapMemory(stagingBufferMemory, {}, imageSize, {});
-		memcpy(data, pixels, static_cast<size_t>(imageSize));
+		memcpy(data, image.image.data(), static_cast<size_t>(imageSize));
 		device.unmapMemory(stagingBufferMemory);
-
-		stbi_image_free(pixels);
 		
 		auto format = vk::Format::eR8G8B8A8Srgb;
 
@@ -905,6 +967,84 @@ private:
 			renderFinishedSemaphore[i] = device.createSemaphore(semaphoreInfo);
 			inFlightFence[i] = device.createFence(fenceInfo);
 		}
+	}
+
+	void __UNUSEDPROC() {
+		auto manager = FbxManager::Create();
+
+		auto ios = FbxIOSettings::Create(manager, IOSROOT);
+		manager->SetIOSettings(ios);
+
+		auto importer = FbxImporter::Create(manager, "");
+
+		if (!importer->Initialize("models/model.fbx", -1, manager->GetIOSettings())) {
+			throw std::runtime_error("failed fbx read.");
+		}
+
+		auto scene = FbxScene::Create(manager, "");
+
+		importer->Import(scene);
+
+		auto converter = FbxGeometryConverter(manager);
+		converter.Triangulate(scene, true);
+
+		auto node = scene->GetRootNode();
+
+		const FbxMesh* mesh = nullptr;
+		bool found = false;
+		auto req = [&](FbxObject* _obj, auto f) -> void {
+			for (size_t i = 0, c = _obj->GetSrcObjectCount(); i < c; ++i) {
+				auto obj = _obj->GetSrcObject(i);
+				if (obj->GetClassId() == FbxMesh::ClassId) {
+					mesh = FbxCast<FbxMesh>(obj);
+					found = true;
+					break;
+				}
+				f(obj, f);
+				if (found) {
+					break;
+				}
+			}
+			return;
+		};
+
+		req(node, req);
+
+		int polygonCount = mesh->GetPolygonCount();
+		int* indices = mesh->GetPolygonVertices();
+		int vertexCount = mesh->GetPolygonVertexCount();
+		auto vertices = mesh->GetControlPoints();
+
+		// indices
+		for (size_t i = 0; i < polygonCount; ++i) {
+			this->indices.push_back(i * 3 + 0);
+			this->indices.push_back(i * 3 + 1);
+			this->indices.push_back(i * 3 + 2);
+		}
+
+		// vertices
+		for (size_t i = 0; i < vertexCount; ++i) {
+			Vertex vertex{};
+
+			int idx = indices[i];
+
+			vertex.pos = {
+				vertices[idx][0],
+				vertices[idx][1],
+				vertices[idx][2]
+			};
+
+			vertex.color = {1.0f, 1.0f, 1.0f};
+
+			vertex.texCoord = {
+
+			};
+
+			this->vertices.push_back(vertex);
+		}
+
+		importer->Destroy();
+		manager->Destroy();
 	}
 
 	void cleanupSwapChain() {
@@ -1512,8 +1652,8 @@ private:
 		UniformBufferObject ubo{};
 
 		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f) + pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 0.6f), glm::vec3(0.0f, 0.0f, 0.6f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.proj = glm::perspective(glm::radians(30.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1;
 
 		memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));

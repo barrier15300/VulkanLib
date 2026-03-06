@@ -1,4 +1,19 @@
 #pragma once
+
+#pragma comment(lib, "vulkan-1.lib")
+#pragma comment(lib, "glfw3.lib")
+#pragma comment(lib, "libfbxsdk-md.lib")
+#pragma comment(lib, "libxml2-md.lib")
+#pragma comment(lib, "zlib-md.lib")
+
+#pragma warning(disable:26812)
+#pragma warning(disable:26451)
+#pragma warning(disable:26495)
+#include <fbxsdk.h>
+#pragma warning(default:26812)
+#pragma warning(default:26451)
+#pragma warning(default:26495)
+
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -12,10 +27,6 @@
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 
 #include <array>
 #include <fstream>

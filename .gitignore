@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/models/model.vrm
+/models/model.fbx
+/textures/modeltexture.png
