@@ -365,3 +365,5 @@ FodyWeavers.xsd
 /models/model.fbx
 /textures/modeltexture.png
 /glfw
+/glfw/include/GLFW/glfw3.h
+/glfw/include/GLFW/glfw3native.h
